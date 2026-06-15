@@ -24,6 +24,7 @@ function getPositionColor(pos: number) {
   return "text-white";
 }
 
+// 1. Componente da camisa na gaveta lateral
 function DraggableKitCard({ kit }: { kit: KitResponse }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `kit-${kit.id}`,
@@ -41,7 +42,7 @@ function DraggableKitCard({ kit }: { kit: KitResponse }) {
       className="flex cursor-grab items-center gap-4 rounded-lg border border-zinc-700 bg-zinc-900/80 p-3 shadow-sm hover:border-zinc-500 active:cursor-grabbing"
     >
       <div className="flex h-16 w-16 items-center justify-center rounded-md border border-zinc-700 bg-zinc-950 text-xs text-zinc-500 overflow-hidden">
-        {kit.imgUrl ? <img src={kit.imgUrl} alt={kit.name} loading="lazy" className="object-cover h-full w-full" /> : "Foto"}
+        {kit.imgUrl ? <img src={kit.imgUrl} alt={kit.name} loading="lazy" className="object-cover h-full w-full pointer-events-none" /> : "Foto"}
       </div>
       <div className="flex-1">
         <h4 className="font-semibold text-zinc-100">{kit.name}</h4>
@@ -54,6 +55,42 @@ function DraggableKitCard({ kit }: { kit: KitResponse }) {
   );
 }
 
+// 2. NOVO COMPONENTE: Permite arrastar a camisa que já está dentro de uma posição
+function DraggableSlottedKit({ kit, position, removeKit }: { kit: KitResponse, position: number, removeKit: (pos: number) => void }) {
+  const { attributes, listeners, setNodeRef, transform } = useDraggable({
+    id: `slotted-kit-${kit.id}`,
+    data: kit,
+  });
+
+  const style = transform ? { transform: CSS.Translate.toString(transform), zIndex: 50 } : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...listeners}
+      {...attributes}
+      className="flex w-full items-center gap-4 rounded-md border border-zinc-700 bg-zinc-900 p-2 shadow-sm relative group cursor-grab active:cursor-grabbing"
+    >
+      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-zinc-950 overflow-hidden">
+        {kit.imgUrl ? <img src={kit.imgUrl} alt={kit.name} loading="lazy" className="object-cover h-full w-full pointer-events-none" /> : <span className="text-[10px] text-zinc-600">Foto</span>}
+      </div>
+      <div className="flex-1">
+        <h4 className="text-sm font-semibold text-zinc-100">{kit.kitType === 'SPECIAL' ? `🌟 ${kit.name}` : kit.name}</h4>
+        <p className="text-xs text-zinc-400">{kit.kitType} • {kit.releaseYear}</p>
+      </div>
+      <button
+        onPointerDown={(e) => e.stopPropagation()} // Impede que o clique no X inicie um "arrasto" sem querer
+        onClick={() => removeKit(position)}
+        className="absolute right-2 top-2 hidden rounded-full bg-red-900/80 p-1.5 text-white hover:bg-red-700 group-hover:block z-10"
+      >
+        <XIcon size={14} />
+      </button>
+    </div>
+  );
+}
+
+// 3. Slot que recebe as camisas
 function DroppableSlot({ slot, removeKit }: { slot: Slot, removeKit: (pos: number) => void }) {
   const { isOver, setNodeRef } = useDroppable({
     id: `slot-${slot.position}`,
@@ -72,21 +109,7 @@ function DroppableSlot({ slot, removeKit }: { slot: Slot, removeKit: (pos: numbe
         }`}
       >
         {slot.kit ? (
-          <div className="flex w-full items-center gap-4 rounded-md border border-zinc-700 bg-zinc-900 p-2 shadow-sm relative group">
-            <div className="flex h-14 w-14 items-center justify-center rounded-md bg-zinc-950 overflow-hidden">
-              {slot.kit.imgUrl ? <img src={slot.kit.imgUrl} alt={slot.kit.name} loading="lazy" className="object-cover h-full w-full" /> : <span className="text-[10px] text-zinc-600">Foto</span>}
-            </div>
-            <div className="flex-1">
-              <h4 className="text-sm font-semibold text-zinc-100">{slot.kit.kitType === 'SPECIAL' ? `🌟 ${slot.kit.name}` : slot.kit.name}</h4>
-              <p className="text-xs text-zinc-400">{slot.kit.kitType} • {slot.kit.releaseYear}</p>
-            </div>
-            <button
-              onClick={() => removeKit(slot.position)}
-              className="absolute right-2 top-2 hidden rounded-full bg-red-900/80 p-1 text-white hover:bg-red-700 group-hover:block"
-            >
-              ✕
-            </button>
-          </div>
+          <DraggableSlottedKit kit={slot.kit} position={slot.position} removeKit={removeKit} />
         ) : (
           <span className="w-full text-center text-sm text-zinc-500">Arraste uma camisa aqui</span>
         )}
@@ -188,24 +211,41 @@ export function RankingBuilder() {
     setIsFilterModalOpen(false);
   }
 
+  // 4. NOVA LÓGICA DE SWAP NO DRAG END
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over) return;
 
-    const kitDragged = active.data.current as KitResponse;
-    const targetPosition = over.data.current?.position as number;
+    // Garante que só reage se soltar em cima de um Slot
+    if (over.id.toString().startsWith("slot-")) {
+      const kitDragged = active.data.current as KitResponse;
+      const targetPosition = over.data.current?.position as number;
 
-    setSlots((prevSlots) =>
-      prevSlots.map((slot) => {
-        if (slot.kit?.id === kitDragged.id && slot.position !== targetPosition) {
-          return { ...slot, kit: null };
-        }
-        if (slot.position === targetPosition) {
-          return { ...slot, kit: kitDragged };
-        }
-        return slot;
-      })
-    );
+      if (!kitDragged || !targetPosition) return;
+
+      setSlots((prevSlots) => {
+        // Encontra onde a camisa estava (caso ela tenha vindo de outra posição do ranking)
+        const sourceSlot = prevSlots.find((s) => s.kit?.id === kitDragged.id);
+        // Descobre quem está na posição alvo
+        const targetSlot = prevSlots.find((s) => s.position === targetPosition);
+
+        return prevSlots.map((slot) => {
+          // A posição alvo recebe a camisa arrastada
+          if (slot.position === targetPosition) {
+            return { ...slot, kit: kitDragged };
+          }
+          // Se a camisa arrastada veio de outro slot, fazemos o SWAP (Troca) e colocamos a camisa antiga lá
+          if (sourceSlot && slot.position === sourceSlot.position) {
+            return { ...slot, kit: targetSlot?.kit || null };
+          }
+          // Prevenção extra para garantir que a camisa arrastada não fique duplicada
+          if (!sourceSlot && slot.kit?.id === kitDragged.id) {
+            return { ...slot, kit: null };
+          }
+          return slot;
+        });
+      });
+    }
   }
 
   function removeKitFromSlot(position: number) {
@@ -289,6 +329,11 @@ export function RankingBuilder() {
     }
   }
 
+  // 5. Variável que esconde as camisas que já estão nas posições
+  const displayedKits = availableKits.filter(
+    (kit) => !slots.some((slot) => slot.kit?.id === kit.id)
+  );
+
   if (!ranking) return (
     <div className="p-8 text-center text-white flex justify-center items-center h-screen">
       <Loader2Icon className="animate-spin text-zinc-500" />
@@ -368,10 +413,10 @@ export function RankingBuilder() {
               </div>
 
               <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar flex flex-col gap-3">
-                {availableKits.length === 0 ? (
-                  <p className="text-center text-zinc-500 mt-10">Nenhum kit encontrado.</p>
+                {displayedKits.length === 0 ? (
+                  <p className="text-center text-zinc-500 mt-10">Nenhum kit disponível.</p>
                 ) : (
-                  availableKits.map((kit) => (
+                  displayedKits.map((kit) => (
                     <DraggableKitCard key={kit.id} kit={kit} />
                   ))
                 )}
