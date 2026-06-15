@@ -1,9 +1,8 @@
-import axios from "axios";
-
-const API_URL = "http://localhost:8080";
+import axios from 'axios';
 
 export const api = axios.create({
-  baseURL: API_URL,
+  // Tenta ler a variável do Render, se não existir (como na sua máquina), usa o localhost
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080',
 });
 
 api.interceptors.request.use((config) => {
