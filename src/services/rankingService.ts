@@ -58,4 +58,10 @@ export const rankingService = {
   async delete(id: number): Promise<void> {
     await api.delete(`/rankings/${id}`);
   },
+
+  async updateTitle(id: number, title: string): Promise<void> {
+    await api.patch(`/rankings/${id}/title`, { title });
+  },
+
+  
 };

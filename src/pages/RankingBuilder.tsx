@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { DndContext, useDraggable, useDroppable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import { SearchIcon, SaveIcon, ImageIcon, FilterIcon, XIcon, FilterXIcon, ArrowLeftIcon, Loader2Icon } from "lucide-react";
+import { SearchIcon, SaveIcon, ImageIcon, FilterIcon, XIcon, FilterXIcon, ArrowLeftIcon, Loader2Icon, Edit2Icon } from "lucide-react";
 import { toPng } from 'html-to-image';
 import { kitService } from "../services/kitService";
 import { rankingService } from "../services/rankingService";
@@ -55,7 +55,7 @@ function DraggableKitCard({ kit }: { kit: KitResponse }) {
   );
 }
 
-// 2. NOVO COMPONENTE: Permite arrastar a camisa que já está dentro de uma posição
+// 2. Componente: Permite arrastar a camisa que já está dentro de uma posição
 function DraggableSlottedKit({ kit, position, removeKit }: { kit: KitResponse, position: number, removeKit: (pos: number) => void }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({
     id: `slotted-kit-${kit.id}`,
@@ -80,7 +80,7 @@ function DraggableSlottedKit({ kit, position, removeKit }: { kit: KitResponse, p
         <p className="text-xs text-zinc-400">{kit.kitType} • {kit.releaseYear}</p>
       </div>
       <button
-        onPointerDown={(e) => e.stopPropagation()} // Impede que o clique no X inicie um "arrasto" sem querer
+        onPointerDown={(e) => e.stopPropagation()} 
         onClick={() => removeKit(position)}
         className="absolute right-2 top-2 hidden rounded-full bg-red-900/80 p-1.5 text-white hover:bg-red-700 group-hover:block z-10"
       >
@@ -138,6 +138,11 @@ export function RankingBuilder() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  // Estados para edição do título do ranking
+  const [isEditTitleModalOpen, setIsEditTitleModalOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
 
   const podiumRef = useRef<HTMLDivElement>(null);
   const [podiumHeight, setPodiumHeight] = useState<number | undefined>(undefined);
@@ -211,12 +216,11 @@ export function RankingBuilder() {
     setIsFilterModalOpen(false);
   }
 
-  // 4. NOVA LÓGICA DE SWAP NO DRAG END
+  // 4. Lógica de Swap no Drag End
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over) return;
 
-    // Garante que só reage se soltar em cima de um Slot
     if (over.id.toString().startsWith("slot-")) {
       const kitDragged = active.data.current as KitResponse;
       const targetPosition = over.data.current?.position as number;
@@ -224,21 +228,16 @@ export function RankingBuilder() {
       if (!kitDragged || !targetPosition) return;
 
       setSlots((prevSlots) => {
-        // Encontra onde a camisa estava (caso ela tenha vindo de outra posição do ranking)
         const sourceSlot = prevSlots.find((s) => s.kit?.id === kitDragged.id);
-        // Descobre quem está na posição alvo
         const targetSlot = prevSlots.find((s) => s.position === targetPosition);
 
         return prevSlots.map((slot) => {
-          // A posição alvo recebe a camisa arrastada
           if (slot.position === targetPosition) {
             return { ...slot, kit: kitDragged };
           }
-          // Se a camisa arrastada veio de outro slot, fazemos o SWAP (Troca) e colocamos a camisa antiga lá
           if (sourceSlot && slot.position === sourceSlot.position) {
             return { ...slot, kit: targetSlot?.kit || null };
           }
-          // Prevenção extra para garantir que a camisa arrastada não fique duplicada
           if (!sourceSlot && slot.kit?.id === kitDragged.id) {
             return { ...slot, kit: null };
           }
@@ -273,6 +272,36 @@ export function RankingBuilder() {
       alert("Falha ao salvar. Verifique se não há posições ou camisas duplicadas.");
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  // Funções para salvar título
+  async function handleSaveNewTitle(e: React.FormEvent) {
+    e.preventDefault();
+    if (!ranking || !newTitle.trim() || newTitle.trim() === ranking.title) {
+      setIsEditTitleModalOpen(false);
+      return;
+    }
+
+    setIsSavingTitle(true);
+    try {
+      // ATENÇÃO: Certifique-se de ter criado a função updateTitle no seu rankingService.ts
+      await rankingService.updateTitle(ranking.id, newTitle.trim());
+      
+      setRanking({ ...ranking, title: newTitle.trim() });
+      setIsEditTitleModalOpen(false);
+    } catch (error) {
+      console.error("Erro ao atualizar o título:", error);
+      alert("Falha ao atualizar o título. Tente novamente.");
+    } finally {
+      setIsSavingTitle(false);
+    }
+  }
+
+  function openEditTitleModal() {
+    if (ranking) {
+      setNewTitle(ranking.title);
+      setIsEditTitleModalOpen(true);
     }
   }
 
@@ -353,7 +382,16 @@ export function RankingBuilder() {
         </button>
 
         <div className="mb-12 flex flex-col items-center justify-center text-center">
-          <h1 className="text-4xl font-bold text-white tracking-tight">{ranking.title}</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-4xl font-bold text-white tracking-tight">{ranking.title}</h1>
+            <button 
+              onClick={openEditTitleModal}
+              className="rounded-full p-2 text-zinc-500 hover:bg-zinc-800 hover:text-white transition-colors"
+              title="Editar título"
+            >
+              <Edit2Icon size={20} />
+            </button>
+          </div>
           <span className="mt-2 rounded-full bg-zinc-800 px-3 py-1 text-xs font-medium text-zinc-300">
             {ranking.rankingType.replace('_', ' ')}
           </span>
@@ -459,7 +497,6 @@ export function RankingBuilder() {
             </div>
 
             <form onSubmit={handleApplyAdvancedFilter} className="space-y-5">
-
               <div>
                 <label className="block text-sm font-medium text-zinc-300 mb-2">Filtrar por</label>
                 <div className="flex rounded-md bg-zinc-950 p-1 border border-zinc-700">
@@ -506,6 +543,56 @@ export function RankingBuilder() {
               <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-zinc-800">
                 <button type="button" onClick={handleClearFilters} className="rounded-md px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition-colors">Limpar Filtros</button>
                 <button type="submit" className="rounded-md bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200 transition-colors">Aplicar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição de Título */}
+      {isEditTitleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-white">Editar Título do Ranking</h3>
+              <button 
+                onClick={() => setIsEditTitleModalOpen(false)} 
+                className="rounded-md p-1 text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
+              >
+                <XIcon size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveNewTitle} className="space-y-5">
+              <div>
+                <label className="block text-sm font-medium text-zinc-300 mb-2">Novo Título</label>
+                <input 
+                  type="text" 
+                  required 
+                  autoFocus
+                  placeholder="Ex: Meus Mantos Favoritos" 
+                  value={newTitle} 
+                  onChange={(e) => setNewTitle(e.target.value)} 
+                  className="w-full rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-white focus:border-white focus:outline-none focus:ring-1 focus:ring-white" 
+                />
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3 pt-4 border-t border-zinc-800">
+                <button 
+                  type="button" 
+                  onClick={() => setIsEditTitleModalOpen(false)} 
+                  className="rounded-md px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSavingTitle}
+                  className="flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200 transition-colors disabled:opacity-50"
+                >
+                  {isSavingTitle && <Loader2Icon size={16} className="animate-spin" />}
+                  {isSavingTitle ? "Salvando..." : "Salvar"}
+                </button>
               </div>
             </form>
           </div>
