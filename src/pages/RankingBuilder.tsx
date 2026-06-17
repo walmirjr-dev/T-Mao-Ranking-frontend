@@ -363,7 +363,7 @@ export function RankingBuilder() {
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start">
 
             <div ref={podiumRef} id="ranking-podium" className="flex flex-col gap-4 rounded-xl border border-zinc-700 bg-zinc-900 p-6 shadow-lg">
-              <h2 className="mb-4 text-center text-xl font-bold text-white">Posições</h2>
+              <h2 className="mb-4 text-center text-xl font-bold text-white">Posições - {ranking.title}</h2>
               <div className="flex flex-col gap-4">
                 {slots.map((slot) => (
                   <DroppableSlot key={slot.position} slot={slot} removeKit={removeKitFromSlot} />
